@@ -82,11 +82,12 @@ class VideoDataset(Dataset):
                 indices_list.append(frame_indices[cur_index:cur_index+self.seq_len])
                 cur_index+=self.seq_len
             last_seq=frame_indices[cur_index:]
+            last_seq1=list(last_seq)
             for index in last_seq:
-                if len(last_seq) >= self.seq_len:
+                if len(last_seq1) >= self.seq_len:
                     break
-                last_seq.append(index)
-            indices_list.append(last_seq)
+                last_seq1.append(index)
+            indices_list.append(last_seq1)
             imgs_list=[]
             for indices in indices_list:
                 imgs = []
@@ -99,9 +100,41 @@ class VideoDataset(Dataset):
                     img = img.unsqueeze(0)
                     imgs.append(img)
                 imgs = torch.cat(imgs, dim=0)
-                #imgs=imgs.permute(1,0,2,3)
-                imgs_list.append(imgs)
+                if imgs.shape == torch.Size([4, 3, 224, 112]):
+                # imgs=imgs.permute(1,0,2,3)
+                    imgs_list.append(imgs)
             imgs_array = torch.stack(imgs_list)
+
+            # for indices in indices_list[0:2]:
+            #     imgs = []
+            #     for index in indices:
+            #         index=int(index)
+            #         img_path = img_paths[index]
+            #         img = read_image(img_path)
+            #         if self.transform is not None:
+            #             img = self.transform(img)
+            #         img = img.unsqueeze(0)
+            #         imgs.append(img)
+            #     imgs = torch.cat(imgs, dim=0)
+            #     if imgs.shape == torch.Size([4, 3, 224, 112]):
+            #     # imgs=imgs.permute(1,0,2,3)
+            #         imgs_list.append(imgs)
+            # imgs_array = torch.stack(imgs_list)
+
+            # imgs = []
+            # for index in indices_list[0:1]:
+            #     index=int(index)
+            #     img_path = img_paths[index]
+            #     img = read_image(img_path)
+            #     if self.transform is not None:
+            #         img = self.transform(img)
+            #     img = img.unsqueeze(0)
+            #     imgs.append(img)
+            # imgs = torch.cat(imgs, dim=0)
+            # if imgs.shape == torch.Size([4, 3, 224, 112]):
+            # # imgs=imgs.permute(1,0,2,3)
+            #     imgs_list.append(imgs)
+            # imgs_array = torch.stack(imgs_list)
             return imgs_array, pid, camid
 
         else:

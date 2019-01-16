@@ -26,7 +26,7 @@ from samplers import RandomIdentitySampler
 
 parser = argparse.ArgumentParser(description='Train video model with cross entropy loss')
 # Datasets
-parser.add_argument('-d', '--dataset', type=str, default='mars',
+parser.add_argument('-d', '--dataset', type=str, default='prid', help="mars, ilidsvid, prid",
                     choices=data_manager.get_names())
 parser.add_argument('-j', '--workers', default=4, type=int,
                     help="number of data loading workers (default: 4)")
@@ -36,7 +36,7 @@ parser.add_argument('--width', type=int, default=112,
                     help="width of an image (default: 112)")
 parser.add_argument('--seq-len', type=int, default=4, help="number of images to sample in a tracklet")
 # Optimization options
-parser.add_argument('--max-epoch', default=800, type=int,
+parser.add_argument('--max-epoch', default=500, type=int,
                     help="maximum epochs to run")
 parser.add_argument('--start-epoch', default=0, type=int,
                     help="manual epoch number (useful on restarts)")
@@ -57,7 +57,7 @@ parser.add_argument('--num-instances', type=int, default=4,
 parser.add_argument('--htri-only', action='store_true', default=False,
                     help="if this is True, only htri loss is used in training")
 # Architecture
-parser.add_argument('-a', '--arch', type=str, default='resnet50tp', help="resnet503d, resnet50tp, resnet50ta, resnetrnn")
+parser.add_argument('-a', '--arch', type=str, default='resnet50ta', help="resnet503d, resnet50tp, resnet50ta, resnet50rnn")
 parser.add_argument('--pool', type=str, default='avg', choices=['avg', 'max'])
 
 # Miscs
@@ -108,7 +108,8 @@ def main():
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    pin_memory = True if use_gpu else False
+    pin_memory = False if use_gpu else True
+    # pin_memory = True if use_gpu else False
 
 
     trainloader = DataLoader(
@@ -167,17 +168,20 @@ def main():
     if args.arch=='resnet503d':
         torch.backends.cudnn.benchmark = False
     for epoch in range(start_epoch, args.max_epoch):
-        print("==> Epoch {}/{}".format(epoch+1, args.max_epoch))
+        if epoch % 10 == 0:
+            print("==> Epoch {}/{}".format(epoch+1, args.max_epoch))
         
         train(model, criterion_xent, criterion_htri, optimizer, trainloader, use_gpu)
         
-        if args.stepsize > 0: scheduler.step()
+        if args.stepsize > 0:
+            scheduler.step()
         
         if args.eval_step > 0 and (epoch+1) % args.eval_step == 0 or (epoch+1) == args.max_epoch:
             print("==> Test")
             rank1 = test(model, queryloader, galleryloader, args.pool, use_gpu)
             is_best = rank1 > best_rank1
-            if is_best: best_rank1 = rank1
+            if is_best:
+                best_rank1 = rank1
 
             if use_gpu:
                 state_dict = model.module.state_dict()
@@ -188,7 +192,7 @@ def main():
                 'rank1': rank1,
                 'epoch': epoch,
             }, is_best, osp.join(args.save_dir, 'checkpoint_ep' + str(epoch+1) + '.pth.tar'))
-
+    print("best rank1 is {}".format(best_rank1))
     elapsed = round(time.time() - start_time)
     elapsed = str(datetime.timedelta(seconds=elapsed))
     print("Finished. Total elapsed time (h:m:s): {}".format(elapsed))
@@ -222,16 +226,36 @@ def test(model, queryloader, galleryloader, pool, use_gpu, ranks=[1, 5, 10, 20])
     model.eval()
 
     qf, q_pids, q_camids = [], [], []
+    features = []
     for batch_idx, (imgs, pids, camids) in enumerate(queryloader):
+        # print(batch_idx)
         if use_gpu:
             imgs = imgs.cuda()
-        imgs = Variable(imgs, volatile=True)
+        with torch.no_grad():
+            imgs = Variable(imgs)
         # b=1, n=number of clips, s=16
         b, n, s, c, h, w = imgs.size()
         assert(b==1)
         imgs = imgs.view(b*n, s, c, h, w)
-        features = model(imgs)
-        features = features.view(n, -1)
+        # mid = int(b*n/2)
+        # l1 = imgs[0:mid]
+        # l2 = imgs[mid:]
+        # feature1 = model(l1)
+        # feature2 = model(l2)
+        if args.dataset == 'mars':
+            maxratio = 1/4
+        else:
+            maxratio = 3/4
+        for index, img in enumerate(imgs[0:int(b*n*maxratio)]):
+            img = img.unsqueeze(0)
+            feature = model(img)
+            # feature = feature.unsqeeze(0)
+            if index == 0:
+                features = feature
+            features = torch.cat((features, feature), 0)
+
+        # features = model(imgs)
+        # features = features.view(n, -1)
         features = torch.mean(features, 0)
         features = features.data.cpu()
         qf.append(features)
@@ -244,13 +268,15 @@ def test(model, queryloader, galleryloader, pool, use_gpu, ranks=[1, 5, 10, 20])
     print("Extracted features for query set, obtained {}-by-{} matrix".format(qf.size(0), qf.size(1)))
 
     gf, g_pids, g_camids = [], [], []
+    features = []
     for batch_idx, (imgs, pids, camids) in enumerate(galleryloader):
         if use_gpu:
             imgs = imgs.cuda()
-        imgs = Variable(imgs, volatile=True)
+        with torch.no_grad():
+            imgs = Variable(imgs)
         b, n, s, c, h, w = imgs.size()
-        imgs = imgs.view(b*n, s , c, h, w)
-        assert(b==1)
+        imgs = imgs.view(b*n, s, c, h, w)
+        assert(b == 1)
         features = model(imgs)
         features = features.view(n, -1)
         if pool == 'avg':
@@ -269,8 +295,7 @@ def test(model, queryloader, galleryloader, pool, use_gpu, ranks=[1, 5, 10, 20])
     print("Computing distance matrix")
 
     m, n = qf.size(0), gf.size(0)
-    distmat = torch.pow(qf, 2).sum(dim=1, keepdim=True).expand(m, n) + \
-              torch.pow(gf, 2).sum(dim=1, keepdim=True).expand(n, m).t()
+    distmat = torch.pow(qf, 2).sum(dim=1, keepdim=True).expand(m, n) + torch.pow(gf, 2).sum(dim=1, keepdim=True).expand(n, m).t()
     distmat.addmm_(1, -2, qf, gf.t())
     distmat = distmat.numpy()
 

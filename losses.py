@@ -77,9 +77,10 @@ class TripletLoss(nn.Module):
         dist_ap, dist_an = [], []
         for i in range(n):
             dist_ap.append(dist[i][mask[i]].max())
-            dist_an.append(dist[i][mask[i] == 0].min())
-        dist_ap = torch.cat(dist_ap)
-        dist_an = torch.cat(dist_an)
+            dist_an.append(dist[i][mask[i] == 0].min())  # 损失函数可以考虑进行修改的地方
+        # print(dist_ap)
+        dist_ap = torch.Tensor(dist_ap).cuda()
+        dist_an = torch.Tensor(dist_an).cuda()
         # Compute ranking hinge loss
         y = dist_an.data.new()
         y.resize_as_(dist_an.data)

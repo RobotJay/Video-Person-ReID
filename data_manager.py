@@ -118,16 +118,19 @@ class Mars(object):
         pid_list = list(set(meta_data[:,2].tolist()))
         num_pids = len(pid_list)
 
-        if relabel: pid2label = {pid:label for label, pid in enumerate(pid_list)}
+        if relabel:
+            pid2label = {pid:label for label, pid in enumerate(pid_list)}
         tracklets = []
         num_imgs_per_tracklet = []
 
         for tracklet_idx in range(num_tracklets):
             data = meta_data[tracklet_idx,...]
             start_index, end_index, pid, camid = data
-            if pid == -1: continue # junk images are just ignored
+            if pid == -1:
+                continue # junk images are just ignored
             assert 1 <= camid <= 6
-            if relabel: pid = pid2label[pid]
+            if relabel:
+                pid = pid2label[pid]
             camid -= 1 # index starts from 0
             img_names = names[start_index-1:end_index]
 
@@ -225,14 +228,14 @@ class iLIDSVID(object):
     def _download_data(self):
         if osp.exists(self.root):
             print("This dataset has been downloaded.")
-            return
+            # return
 
         mkdir_if_missing(self.root)
         fpath = osp.join(self.root, osp.basename(self.dataset_url))
 
-        print("Downloading iLIDS-VID dataset")
-        url_opener = urllib.URLopener()
-        url_opener.retrieve(self.dataset_url, fpath)
+        # print("Downloading iLIDS-VID dataset")
+        # url_opener = urllib.request.URLopener()
+        # url_opener.retrieve(self.dataset_url, fpath)
 
         print("Extracting files")
         tar = tarfile.open(fpath)
@@ -337,10 +340,10 @@ class PRID(object):
     root = './data/prid2011'
     dataset_url = 'https://files.icg.tugraz.at/f/6ab7e8ce8f/?raw=1'
     split_path = osp.join(root, 'splits_prid2011.json')
-    cam_a_path = osp.join(root, 'prid_2011', 'multi_shot', 'cam_a')
-    cam_b_path = osp.join(root, 'prid_2011', 'multi_shot', 'cam_b')
+    cam_a_path = osp.join(root, 'multi_shot', 'cam_a')
+    cam_b_path = osp.join(root, 'multi_shot', 'cam_b')
 
-    def __init__(self, split_id=0, min_seq_len=0):
+    def __init__(self, split_id=4, min_seq_len=0):
         self._check_before_run()
         splits = read_json(self.split_path)
         if split_id >=  len(splits):
